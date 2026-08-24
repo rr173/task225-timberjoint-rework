@@ -30,6 +30,8 @@ go run ./cmd/task225-timberjoint --addr :8080 --db ./task225-timberjoint.db
 
 ## API 入口（前缀 /api）
 
+服务根路径 `/` 提供嵌入式测绘复核页面，展示批次统计和节点方向冲突标记；页面通过同一服务的 `/api` 接口读取数据。
+
 | 能力 | 入口 |
 | --- | --- |
 | 批次生命周期 | `POST /api/batches`、`GET /api/batches`、`GET /api/batches/{id}`、`POST /api/batches/{id}/advance`、`POST /api/batches/{id}/archive` |

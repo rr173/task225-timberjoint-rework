@@ -2,13 +2,18 @@
 package httpapi
 
 import (
+	"embed"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"net/http"
 
 	"task225-timberjoint/internal/model"
 	"task225-timberjoint/internal/service"
 )
+
+//go:embed web/*
+var webContent embed.FS
 
 // Server HTTP 服务器。
 type Server struct {
@@ -21,6 +26,8 @@ func New(app *service.App) *Server { return &Server{app: app} }
 // Handler 注册全部路由并返回处理器。
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	webRoot, _ := fs.Sub(webContent, "web")
+	mux.Handle("GET /", http.FileServer(http.FS(webRoot)))
 
 	// 批次生命周期。
 	mux.HandleFunc("POST /api/batches", s.createBatch)

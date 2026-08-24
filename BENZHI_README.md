@@ -8,6 +8,7 @@
 ## 运行契约
 
 - **入口**：`cmd/task225-timberjoint/main.go`
+- **复核页面**：服务根路径 `/`（嵌入式页面，读取 `/api` 数据并标记节点冲突）
 - **标志**：
   - `--addr :8080` 监听地址
   - `--db ./task225-timberjoint.db` SQLite 路径
