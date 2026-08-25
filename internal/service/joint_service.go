@@ -123,6 +123,11 @@ func (s *JointService) Check(id string) (*joint.CheckReport, error) {
 	if !survey.IsMutable(batch.Status) {
 		return nil, fmt.Errorf("%w: batch is not writable", model.ErrSealed)
 	}
+	// 已确认/已否决的节点关系为终态，复核接口不得再改写其终态：
+	// 再次复核直接拒绝，节点仍保持已确认/已否决状态。
+	if j.Status == model.JointConfirmed || j.Status == model.JointRejected {
+		return nil, fmt.Errorf("%w: cannot re-check joint in terminal status %s", model.ErrInvalidState, j.Status)
+	}
 
 	// 组装测点输入。
 	pointIDs, err := joint.ParseIDList(j.PointIDs)
