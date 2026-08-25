@@ -80,30 +80,25 @@ func (s *VersionService) Publish(batchID, nodeNo, reason string) (*model.NodeVer
 		return nil, fmt.Errorf("marshal snapshot: %w", err)
 	}
 
-	maxNo, err := s.versions.MaxVersionNo(batchID, nodeNo)
-	if err != nil {
-		return nil, err
-	}
-	nextNo := version.NextVersionNo(maxNo)
-
-	// 旧冻结版本 → 替代。
-	if err := s.supersedeFrozen(batchID, nodeNo); err != nil {
-		return nil, err
-	}
-
 	now := time.Now().UTC()
 	v := &model.NodeVersion{
 		ID:           newServiceID("ver"),
 		BatchID:      batchID,
 		NodeNo:       nodeNo,
-		VersionNo:    nextNo,
 		Status:       model.VersionFrozen,
 		SnapshotJSON: string(snapJSON),
 		Reason:       reason,
 		CreatedAt:    now,
 		PublishedAt:  &now,
 	}
-	if err := s.versions.Create(v); err != nil {
+	// 旧冻结版本 → 替代。需在拿到锁后执行（见 WithLock 调用处），保证
+	// supersede 与插入之间不被同节点并发发布交错。
+	if err := s.supersedeFrozen(batchID, nodeNo); err != nil {
+		return nil, err
+	}
+	// 版本号由存储层在事务内原子分配，确保同节点并发发布得到连续且
+	// 不重复的版本号，不会因抢占同一编号而丢失某个发布。
+	if _, err := s.versions.CreateNext(v); err != nil {
 		return nil, err
 	}
 	return v, nil

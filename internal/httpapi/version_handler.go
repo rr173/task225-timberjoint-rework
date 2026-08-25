@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"net/http"
+
+	"task225-timberjoint/internal/model"
 )
 
 // publishVersion POST /api/batches/{id}/nodes/{nodeNo}/versions
@@ -13,7 +15,14 @@ func (s *Server) publishVersion(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	v, err := s.app.Versions.Publish(r.PathValue("id"), r.PathValue("nodeNo"), body.Reason)
+	// 串行化同节点的并发发布：在分配版本号与替代旧冻结版本的关键区内
+	// 不可交错，否则会因抢占同一 version_no 丢失其中一个发布。
+	var v *model.NodeVersion
+	err := s.app.WithLock(func() error {
+		var err error
+		v, err = s.app.Versions.Publish(r.PathValue("id"), r.PathValue("nodeNo"), body.Reason)
+		return err
+	})
 	if err != nil {
 		writeError(w, err)
 		return

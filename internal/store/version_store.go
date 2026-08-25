@@ -16,6 +16,10 @@ func NewVersionStore(db *DB) *VersionStore { return &VersionStore{db: db} }
 const versionCols = `id, batch_id, node_no, version_no, status, snapshot_json, reason, created_at, published_at`
 
 // Create 插入新版本。
+//
+// 调用方须先通过 MaxVersionNo 计算版本号；该路径不在事务内分配版本号，
+// 并发发布会因 UNIQUE(batch_id, node_no, version_no) 冲突而丢失版本，
+// 仅保留给不会并发复算的内部路径使用。新发布请改用 CreateNext。
 func (s *VersionStore) Create(v *model.NodeVersion) error {
 	var publishedAt any
 	if v.PublishedAt != nil {
@@ -31,6 +35,53 @@ func (s *VersionStore) Create(v *model.NodeVersion) error {
 		return fmt.Errorf("insert version: %w", err)
 	}
 	return nil
+}
+
+// CreateNext 在单个事务内原子分配版本号并落库，返回实际分配的版本号。
+//
+// 版本号由 `COALESCE(MAX(version_no), 0) + 1` 计算，紧随其后插入，整个
+// 语句在事务内执行；配合 UNIQUE(batch_id, node_no, version_no) 约束，
+// 即便并发发布同节点的两个请求，也会各自得到连续且不重复的版本号，
+// 不会因抢占同一 version_no 而丢失其中一个发布。
+func (s *VersionStore) CreateNext(v *model.NodeVersion) (int, error) {
+	tx, err := s.db.db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("begin version tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }() // 提交后 Rollback 为无操作。
+
+	var nextNo int
+	row := tx.QueryRow(`SELECT COALESCE(MAX(version_no), 0) + 1 FROM versions WHERE batch_id = ? AND node_no = ?`,
+		v.BatchID, v.NodeNo)
+	if err := row.Scan(&nextNo); err != nil {
+		return 0, fmt.Errorf("allocate version no: %w", err)
+	}
+
+	var publishedAt any
+	if v.PublishedAt != nil {
+		publishedAt = ts(*v.PublishedAt)
+	}
+	res, err := tx.Exec(`INSERT INTO versions (`+versionCols+`) VALUES (?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.BatchID, v.NodeNo, nextNo, v.Status, v.SnapshotJSON, v.Reason,
+		ts(v.CreatedAt), publishedAt)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return 0, model.ErrConflict
+		}
+		return 0, fmt.Errorf("insert version: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("version rows affected: %w", err)
+	}
+	if n == 0 {
+		return 0, model.ErrConflict
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit version tx: %w", err)
+	}
+	v.VersionNo = nextNo
+	return nextNo, nil
 }
 
 // Get 按 ID 查询版本。
