@@ -121,6 +121,24 @@ func (s *VersionStore) MaxVersionNo(batchID, nodeNo string) (int, error) {
 	return int(n.Int64), nil
 }
 
+// AllNodesFrozen reports whether every node in a batch has at least one frozen
+// version. A batch with no nodes is not frozen-eligible. The node set is
+// derived from joints (each joint's node_no is a node), so a node is only
+// considered frozen-covered when it owns a row in versions with status frozen.
+func (s *VersionStore) AllNodesFrozen(batchID string) (bool, error) {
+	var total, frozen int
+	if err := s.db.db.QueryRow(`SELECT COUNT(DISTINCT node_no) FROM joints WHERE batch_id = ?`, batchID).Scan(&total); err != nil {
+		return false, fmt.Errorf("count batch nodes: %w", err)
+	}
+	if total == 0 {
+		return false, nil
+	}
+	if err := s.db.db.QueryRow(`SELECT COUNT(DISTINCT node_no) FROM versions WHERE batch_id = ? AND status = ?`, batchID, model.VersionFrozen).Scan(&frozen); err != nil {
+		return false, fmt.Errorf("count frozen nodes: %w", err)
+	}
+	return frozen >= total, nil
+}
+
 // UpdateStatus 更新版本状态与发布时间。
 func (s *VersionStore) UpdateStatus(id, status string) error {
 	_, err := s.db.db.Exec(`UPDATE versions SET status=?, published_at=? WHERE id=?`,

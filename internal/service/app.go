@@ -30,7 +30,7 @@ func New(db *store.DB) (*App, error) {
 		db:    db,
 		stats: store.NewStatsStore(db),
 	}
-	app.Batches = NewBatchService(store.NewBatchStore(db), store.NewJointStore(db))
+	app.Batches = NewBatchService(store.NewBatchStore(db), store.NewJointStore(db), store.NewVersionStore(db))
 	app.Points = NewPointService(store.NewPointStore(db), store.NewBatchStore(db))
 	app.Members = NewMemberService(store.NewMemberStore(db), store.NewBatchStore(db))
 	app.Joints = NewJointService(
