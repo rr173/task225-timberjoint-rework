@@ -77,6 +77,13 @@ func (s *JointService) ListByBatch(batchID string) ([]model.JointRelation, error
 	return s.joints.ListByBatch(batchID)
 }
 
+// CountBroken 返回某批次下尚未处理的断裂节点关系数。
+// 断裂节点（JointBroken）代表存在结构缺陷、尚未被复核确认或否决的连接，
+// 在其解决前批次不得进入已发布状态。
+func (s *JointService) CountBroken(batchID string) (int, error) {
+	return s.joints.CountByStatus(batchID, model.JointBroken)
+}
+
 // ValidateCurrent rejects publishing a review result after any referenced
 // point or member has changed since the review was persisted.
 func (s *JointService) ValidateCurrent(j *model.JointRelation) error {

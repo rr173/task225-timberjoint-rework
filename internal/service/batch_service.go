@@ -83,6 +83,11 @@ func (s *BatchService) List() ([]model.SurveyBatch, error) {
 
 // Advance 把批次流转到下一状态（采集中→整理中→待复核→已发布）。
 // 封存须显式调用 Archive。
+//
+// 待复核→已发布的前置：批次内不得存在尚未确认的断裂节点关系
+// （状态为 broken）。断裂节点代表存在结构缺陷的连接，须由复核人员
+// 修正后重检并确认（或否决）后，批次方可发布。否则拒绝流转，
+// 批次保持待复核状态。
 func (s *BatchService) Advance(id string) (*model.SurveyBatch, error) {
 	b, err := s.batches.Get(id)
 	if err != nil {
@@ -94,6 +99,15 @@ func (s *BatchService) Advance(id string) (*model.SurveyBatch, error) {
 	next := survey.NextBatchState(b.Status)
 	if next == "" {
 		return nil, fmt.Errorf("%w: batch already at terminal state %s", model.ErrInvalidState, b.Status)
+	}
+	if b.Status == model.BatchReviewing && next == model.BatchPublished {
+		broken, err := s.joints.CountByStatus(id, model.JointBroken)
+		if err != nil {
+			return nil, err
+		}
+		if broken > 0 {
+			return nil, fmt.Errorf("%w: batch has %d unconfirmed broken joint(s), cannot publish", model.ErrInvalidState, broken)
+		}
 	}
 	if err := s.batches.UpdateStatus(id, next); err != nil {
 		return nil, err

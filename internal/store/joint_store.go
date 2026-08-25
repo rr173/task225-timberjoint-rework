@@ -120,6 +120,15 @@ func (s *JointStore) Count() (int, error) {
 	return n, nil
 }
 
+// CountByStatus 返回某批次下处于指定状态的节点关系数。
+func (s *JointStore) CountByStatus(batchID, status string) (int, error) {
+	var n int
+	if err := s.db.db.QueryRow(`SELECT COUNT(*) FROM joints WHERE batch_id = ? AND status = ?`, batchID, status).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count joints by status: %w", err)
+	}
+	return n, nil
+}
+
 func scanJoint(sc scanner) (*model.JointRelation, error) {
 	var j model.JointRelation
 	var createdAt, updatedAt string
