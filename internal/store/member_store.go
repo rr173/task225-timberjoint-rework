@@ -61,14 +61,14 @@ func (s *MemberStore) ListByBatch(batchID string) ([]model.Member, error) {
 	return out, rows.Err()
 }
 
-// Update 更新构件。
+// Update 更新构件。状态沿用 service 给定的值（修正端点后由复核重新裁定）。
 func (s *MemberStore) Update(m *model.Member) error {
 	_, err := s.db.db.Exec(`UPDATE members SET member_no=?, member_type=?,
 		start_x=?, start_y=?, start_z=?, end_x=?, end_y=?, end_z=?,
 		tenon_desc=?, status=?, updated_at=? WHERE id=?`,
 		m.MemberNo, m.MemberType,
 		m.StartX, m.StartY, m.StartZ, m.EndX, m.EndY, m.EndZ,
-		m.TenonDesc, model.MemberDirectionConflict, ts(m.UpdatedAt), m.ID)
+		m.TenonDesc, m.Status, ts(m.UpdatedAt), m.ID)
 	if err != nil {
 		return fmt.Errorf("update member: %w", err)
 	}

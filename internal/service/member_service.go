@@ -144,7 +144,11 @@ func (s *MemberService) Update(id string, in MemberAddInput) (*model.Member, err
 	m.EndY = in.EndY
 	m.EndZ = in.EndZ
 	m.TenonDesc = in.TenonDesc
-	m.Status = model.MemberDirectionConflict // 修正后仍保留冲突状态
+	// 修正端点后构件不再直接判定为冲突：方向是否合规由下次节点复核决定，
+	// 此处回退到已匹配，避免构件状态与复核结论脱节。
+	if m.Status == model.MemberDirectionConflict {
+		m.Status = model.MemberMatched
+	}
 	m.UpdatedAt = time.Now().UTC()
 	if err := s.members.Update(m); err != nil {
 		return nil, err

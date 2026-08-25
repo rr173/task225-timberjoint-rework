@@ -174,6 +174,23 @@ func (s *JointService) Check(id string) (*joint.CheckReport, error) {
 	if !rep.Closed || !rep.NumberingOK || rep.DirectionConflict {
 		status = model.JointBroken
 	}
+
+	// 联动：构件方向冲突状态与节点复核结论保持一致。
+	// 冲突时把非缺失构件标记为方向冲突；通过复核时回退为已匹配，
+	// 避免端点修正并重检通过后构件仍残留 direction_conflict 状态。
+	// 先于节点复核记录写入，使节点复核时间戳覆盖构件状态写入，
+	// 不破坏“构件UpdatedAt ≤ 节点复核UpdatedAt”的新鲜度约束。
+	memberStatus := model.MemberMatched
+	if rep.DirectionConflict {
+		memberStatus = model.MemberDirectionConflict
+	}
+	for _, mid := range memberIDs {
+		m, err := s.members.Get(mid)
+		if err == nil && m.Status != model.MemberMissing && m.Status != memberStatus {
+			_ = s.members.UpdateStatus(mid, memberStatus)
+		}
+	}
+
 	j.Status = status
 	j.ClosureResidual = rep.ClosureResidual
 	j.DirectionSpread = rep.DirectionSpread
@@ -181,16 +198,6 @@ func (s *JointService) Check(id string) (*joint.CheckReport, error) {
 	j.UpdatedAt = time.Now().UTC()
 	if err := s.joints.UpdateCheck(j, previousStatus); err != nil {
 		return nil, err
-	}
-
-	// 联动：方向冲突构件标记。
-	if rep.DirectionConflict {
-		for _, mid := range memberIDs {
-			m, err := s.members.Get(mid)
-			if err == nil && m.Status != model.MemberMissing {
-				_ = s.members.UpdateStatus(mid, model.MemberDirectionConflict)
-			}
-		}
 	}
 	return &rep, nil
 }
