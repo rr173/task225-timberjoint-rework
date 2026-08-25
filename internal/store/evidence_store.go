@@ -15,11 +15,15 @@ func NewEvidenceStore(db *DB) *EvidenceStore { return &EvidenceStore{db: db} }
 
 const evidenceCols = `id, joint_id, batch_id, filename, caption, hash, taken_at, created_at`
 
-// Create 插入新证据。
+// Create 插入新证据。同一节点关系下相同内容哈希（同一张照片重复上传）
+// 命中 UNIQUE(joint_id, hash) 约束，返回 ErrDuplicate。
 func (s *EvidenceStore) Create(e *model.PhotoEvidence) error {
 	_, err := s.db.db.Exec(`INSERT INTO evidences (`+evidenceCols+`) VALUES (?,?,?,?,?,?,?,?)`,
 		e.ID, e.JointID, e.BatchID, e.Filename, e.Caption, e.Hash, ts(e.TakenAt), ts(e.CreatedAt))
 	if err != nil {
+		if isUniqueViolation(err) {
+			return model.ErrDuplicate
+		}
 		if isFKViolation(err) {
 			return model.ErrNotFound
 		}

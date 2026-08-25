@@ -165,9 +165,11 @@ func (d *DB) migrate() error {
 			caption     TEXT NOT NULL,
 			hash        TEXT NOT NULL,
 			taken_at    TEXT NOT NULL,
-			created_at  TEXT NOT NULL
+			created_at  TEXT NOT NULL,
+			UNIQUE(joint_id, hash)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_evidences_joint ON evidences(joint_id)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_evidences_joint_hash ON evidences(joint_id, hash)`,
 		`CREATE TABLE IF NOT EXISTS versions (
 			id            TEXT PRIMARY KEY,
 			batch_id      TEXT NOT NULL REFERENCES batches(id),
