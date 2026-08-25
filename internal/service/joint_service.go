@@ -77,6 +77,38 @@ func (s *JointService) ListByBatch(batchID string) ([]model.JointRelation, error
 	return s.joints.ListByBatch(batchID)
 }
 
+// ValidateCurrent rejects publishing a review result after any referenced
+// point or member has changed since the review was persisted.
+func (s *JointService) ValidateCurrent(j *model.JointRelation) error {
+	pointIDs, err := joint.ParseIDList(j.PointIDs)
+	if err != nil {
+		return err
+	}
+	for _, pid := range pointIDs {
+		p, err := s.points.GetInBatch(pid, j.BatchID)
+		if err != nil {
+			return fmt.Errorf("resolve point %s for freshness: %w", pid, err)
+		}
+		if p.UpdatedAt.After(j.UpdatedAt) {
+			return fmt.Errorf("%w: point %s changed after joint review", model.ErrInvalidState, pid)
+		}
+	}
+	memberIDs, err := joint.ParseIDList(j.MemberIDs)
+	if err != nil {
+		return err
+	}
+	for _, mid := range memberIDs {
+		m, err := s.members.GetInBatch(mid, j.BatchID)
+		if err != nil {
+			return fmt.Errorf("resolve member %s for freshness: %w", mid, err)
+		}
+		if m.UpdatedAt.After(j.UpdatedAt) {
+			return fmt.Errorf("%w: member %s changed after joint review", model.ErrInvalidState, mid)
+		}
+	}
+	return nil
+}
+
 // Check 执行节点几何复核：组装测点/构件，做闭合 + 方向 + 编号校验，
 // 把结论落库（closed/broken），并联动更新构件方向冲突状态。
 func (s *JointService) Check(id string) (*joint.CheckReport, error) {

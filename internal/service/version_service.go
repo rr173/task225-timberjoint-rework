@@ -14,6 +14,7 @@ import (
 // VersionService 编排节点版本的发布与快照冻结。
 type VersionService struct {
 	versions  *store.VersionStore
+	jointSvc  *JointService
 	joints    *store.JointStore
 	points    *store.PointStore
 	members   *store.MemberStore
@@ -22,9 +23,10 @@ type VersionService struct {
 }
 
 // NewVersionService 构造版本服务。
-func NewVersionService(versions *store.VersionStore, joints *store.JointStore, points *store.PointStore, members *store.MemberStore, evidences *store.EvidenceStore, batches *store.BatchStore) *VersionService {
+func NewVersionService(versions *store.VersionStore, jointSvc *JointService, joints *store.JointStore, points *store.PointStore, members *store.MemberStore, evidences *store.EvidenceStore, batches *store.BatchStore) *VersionService {
 	return &VersionService{
 		versions:  versions,
+		jointSvc:  jointSvc,
 		joints:    joints,
 		points:    points,
 		members:   members,
@@ -59,6 +61,9 @@ func (s *VersionService) Publish(batchID, nodeNo, reason string) (*model.NodeVer
 	// 定位该节点的关系（已闭合或已确认）。
 	jrel, err := s.findJoint(batchID, nodeNo)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.jointSvc.ValidateCurrent(jrel); err != nil {
 		return nil, err
 	}
 	if jrel.Status != model.JointClosed && jrel.Status != model.JointConfirmed {

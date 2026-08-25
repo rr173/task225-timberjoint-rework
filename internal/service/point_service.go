@@ -22,11 +22,11 @@ func NewPointService(points *store.PointStore, batches *store.BatchStore) *Point
 
 // PointAddInput 是新增测点的入参。
 type PointAddInput struct {
-	No             string
-	X, Y, Z        float64
-	SemiMajor      float64
-	SemiMinor      float64
-	Vertical       float64
+	No              string
+	X, Y, Z         float64
+	SemiMajor       float64
+	SemiMinor       float64
+	Vertical        float64
 	OrientationAzim float64
 }
 
@@ -95,8 +95,10 @@ func (s *PointService) MarkStatus(id, status string) (*model.SurveyPoint, error)
 	default:
 		return nil, fmt.Errorf("%w: invalid point status %s", model.ErrInvalidInput, status)
 	}
-	if err := s.points.UpdateStatus(id, status); err != nil {
+	p.Status = status
+	p.UpdatedAt = time.Now().UTC()
+	if err := s.points.Update(p); err != nil {
 		return nil, err
 	}
-	return s.points.Get(id)
+	return p, nil
 }

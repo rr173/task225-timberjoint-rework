@@ -46,6 +46,7 @@ func New(db *store.DB) (*App, error) {
 	)
 	app.Versions = NewVersionService(
 		store.NewVersionStore(db),
+		app.Joints,
 		store.NewJointStore(db),
 		store.NewPointStore(db),
 		store.NewMemberStore(db),
