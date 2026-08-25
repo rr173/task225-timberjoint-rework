@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>木构节点测绘复核</title>
+  <style>
+    :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { margin: 0; background: #f4f1eb; color: #28231f; }
+    main { max-width: 960px; margin: 0 auto; padding: 32px 20px 48px; }
+    header { display: flex; justify-content: space-between; align-items: end; gap: 16px; }
+    h1 { margin: 0 0 8px; font-size: 30px; }
+    p { color: #6d6258; }
+    .status { color: #2f6b45; font-size: 14px; }
+    .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 24px 0; }
+    .card, .joint { background: white; border: 1px solid #ded6cc; border-radius: 10px; padding: 16px; }
+    .card strong { display: block; font-size: 26px; margin-top: 6px; }
+    .joint { margin-top: 10px; }
+    .joint code { color: #6b3d24; }
+    .conflict { border-left: 5px solid #b34d35; }
+    .ok { border-left: 5px solid #4b8a5a; }
+    @media (max-width: 700px) { .cards { grid-template-columns: repeat(2, 1fr); } header { display: block; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>古建筑木构节点测绘复核</h1>
+      <p>查看测绘批次与节点几何复核结果，定位方向冲突并引用冻结版本。</p>
+    </div>
+    <span id="status" class="status">正在连接服务…</span>
+  </header>
+  <section id="stats" class="cards" aria-label="测绘统计"></section>
+  <section>
+    <h2>节点复核结果</h2>
+    <div id="joints"><p>正在读取批次…</p></div>
+  </section>
+</main>
+<script>
+  const labels = { batches: '批次', points: '测点', members: '构件', joints: '节点' };
+  async function get(path) { const response = await fetch(path); if (!response.ok) throw new Error(response.status); return response.json(); }
+  function renderStats(data) {
+    document.querySelector('#stats').innerHTML = Object.entries(labels).map(([key, label]) =>
+      `<div class="card"><span>${label}</span><strong>${data[key] ?? 0}</strong></div>`).join('');
+  }
+  async function render() {
+    try {
+      const stats = await get('/api/stats');
+      renderStats(stats);
+      const batches = await get('/api/batches');
+      const joints = [];
+      for (const batch of batches) for (const joint of await get(`/api/batches/${batch.id}/joints`)) joints.push({ batch, joint });
+      document.querySelector('#joints').innerHTML = joints.length ? joints.map(({ batch, joint }) => {
+        const conflict = joint.status === 'broken' || joint.direction_spread > batch.direction_tol_deg;
+        return `<article class="joint ${conflict ? 'conflict' : 'ok'}"><strong>${joint.node_no}</strong> · ${batch.name}<br>` +
+          `<span>${conflict ? '需要复核' : '几何复核通过'}，方向散布 ${Number(joint.direction_spread || 0).toFixed(2)}°</span></article>`;
+      }).join('') : '<p>暂无节点关系。</p>';
+      document.querySelector('#status').textContent = '服务已连接';
+    } catch (error) {
+      document.querySelector('#status').textContent = '服务连接失败';
+      document.querySelector('#joints').innerHTML = '<p>无法读取复核数据，请检查服务状态。</p>';
+    }
+  }
+  render();
+</script>
+</body>
+</html>
