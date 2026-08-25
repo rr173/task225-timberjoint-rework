@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -38,6 +39,25 @@ func (s *JointService) Create(batchID, nodeNo string, pointIDs, memberIDs []stri
 	}
 	if len(pointIDs) == 0 && len(memberIDs) == 0 {
 		return nil, fmt.Errorf("%w: joint must reference at least one point or member", model.ErrInvalidInput)
+	}
+
+	// 跨批次引用防护：节点关系只能挂接本批次的测点与构件。
+	// 来自其他测绘批次的 ID（含已删除或不存在的 ID）一律拒绝，不生成节点关系。
+	for _, pid := range pointIDs {
+		if _, err := s.points.GetInBatch(pid, batchID); err != nil {
+			if errors.Is(err, model.ErrNotFound) {
+				return nil, fmt.Errorf("%w: point %s does not belong to batch %s", model.ErrInvalidInput, pid, batchID)
+			}
+			return nil, fmt.Errorf("resolve point %s for batch %s: %w", pid, batchID, err)
+		}
+	}
+	for _, mid := range memberIDs {
+		if _, err := s.members.GetInBatch(mid, batchID); err != nil {
+			if errors.Is(err, model.ErrNotFound) {
+				return nil, fmt.Errorf("%w: member %s does not belong to batch %s", model.ErrInvalidInput, mid, batchID)
+			}
+			return nil, fmt.Errorf("resolve member %s for batch %s: %w", mid, batchID, err)
+		}
 	}
 
 	now := time.Now().UTC()
