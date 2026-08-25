@@ -35,11 +35,11 @@ func NewVersionService(versions *store.VersionStore, joints *store.JointStore, p
 
 // NodeSnapshot 是节点版本冻结的不可变快照。
 type NodeSnapshot struct {
-	NodeNo    string                 `json:"node_no"`
-	Joint     *model.JointRelation   `json:"joint"`
-	Points    []model.SurveyPoint    `json:"points"`
-	Members   []model.Member         `json:"members"`
-	Evidences []model.PhotoEvidence  `json:"evidences"`
+	NodeNo    string                `json:"node_no"`
+	Joint     *model.JointRelation  `json:"joint"`
+	Points    []model.SurveyPoint   `json:"points"`
+	Members   []model.Member        `json:"members"`
+	Evidences []model.PhotoEvidence `json:"evidences"`
 }
 
 // Publish 发布节点版本：组装测点/构件/关系/证据快照并冻结，
@@ -75,30 +75,18 @@ func (s *VersionService) Publish(batchID, nodeNo, reason string) (*model.NodeVer
 		return nil, fmt.Errorf("marshal snapshot: %w", err)
 	}
 
-	maxNo, err := s.versions.MaxVersionNo(batchID, nodeNo)
-	if err != nil {
-		return nil, err
-	}
-	nextNo := version.NextVersionNo(maxNo)
-
-	// 旧冻结版本 → 替代。
-	if err := s.supersedeFrozen(batchID, nodeNo); err != nil {
-		return nil, err
-	}
-
 	now := time.Now().UTC()
 	v := &model.NodeVersion{
 		ID:           newServiceID("ver"),
 		BatchID:      batchID,
 		NodeNo:       nodeNo,
-		VersionNo:    nextNo,
 		Status:       model.VersionFrozen,
 		SnapshotJSON: string(snapJSON),
 		Reason:       reason,
 		CreatedAt:    now,
 		PublishedAt:  &now,
 	}
-	if err := s.versions.Create(v); err != nil {
+	if err := s.versions.CreateNext(v); err != nil {
 		return nil, err
 	}
 	return v, nil

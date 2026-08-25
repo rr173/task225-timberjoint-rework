@@ -39,6 +39,16 @@ func (s *JointService) Create(batchID, nodeNo string, pointIDs, memberIDs []stri
 	if len(pointIDs) == 0 && len(memberIDs) == 0 {
 		return nil, fmt.Errorf("%w: joint must reference at least one point or member", model.ErrInvalidInput)
 	}
+	for _, pid := range pointIDs {
+		if _, err := s.points.GetInBatch(pid, batchID); err != nil {
+			return nil, fmt.Errorf("%w: point %s does not belong to batch %s", model.ErrConflict, pid, batchID)
+		}
+	}
+	for _, mid := range memberIDs {
+		if _, err := s.members.GetInBatch(mid, batchID); err != nil {
+			return nil, fmt.Errorf("%w: member %s does not belong to batch %s", model.ErrConflict, mid, batchID)
+		}
+	}
 
 	now := time.Now().UTC()
 	j := &model.JointRelation{
@@ -74,6 +84,10 @@ func (s *JointService) Check(id string) (*joint.CheckReport, error) {
 	if err != nil {
 		return nil, err
 	}
+	if !joint.CanCheck(j.Status) {
+		return nil, fmt.Errorf("%w: joint status %s cannot be rechecked", model.ErrInvalidState, j.Status)
+	}
+	previousStatus := j.Status
 	batch, err := s.batches.Get(j.BatchID)
 	if err != nil {
 		return nil, err
@@ -89,9 +103,9 @@ func (s *JointService) Check(id string) (*joint.CheckReport, error) {
 	}
 	points := make([]joint.PointInfo, 0, len(pointIDs))
 	for _, pid := range pointIDs {
-		p, err := s.points.Get(pid)
+		p, err := s.points.GetInBatch(pid, j.BatchID)
 		if err != nil {
-			return nil, fmt.Errorf("resolve point %s: %w", pid, err)
+			return nil, fmt.Errorf("resolve point %s in batch %s: %w", pid, j.BatchID, model.ErrConflict)
 		}
 		ell := geometry.NewErrorEllipsoid(p.ErrorSemiMajor, p.ErrorSemiMinor, p.ErrorVertical, p.OrientationAzim)
 		points = append(points, joint.PointInfo{
@@ -109,9 +123,9 @@ func (s *JointService) Check(id string) (*joint.CheckReport, error) {
 	}
 	members := make([]joint.MemberInfo, 0, len(memberIDs))
 	for _, mid := range memberIDs {
-		m, err := s.members.Get(mid)
+		m, err := s.members.GetInBatch(mid, j.BatchID)
 		if err != nil {
-			return nil, fmt.Errorf("resolve member %s: %w", mid, err)
+			return nil, fmt.Errorf("resolve member %s in batch %s: %w", mid, j.BatchID, model.ErrConflict)
 		}
 		dir := geometry.Vec3{X: m.EndX - m.StartX, Y: m.EndY - m.StartY, Z: m.EndZ - m.StartZ}
 		members = append(members, joint.MemberInfo{
@@ -133,7 +147,7 @@ func (s *JointService) Check(id string) (*joint.CheckReport, error) {
 	j.DirectionSpread = rep.DirectionSpread
 	j.CheckReport = joint.MarshalReport(rep)
 	j.UpdatedAt = time.Now().UTC()
-	if err := s.joints.Update(j); err != nil {
+	if err := s.joints.UpdateCheck(j, previousStatus); err != nil {
 		return nil, err
 	}
 
@@ -158,7 +172,7 @@ func (s *JointService) Confirm(id string) (*model.JointRelation, error) {
 	if !joint.CanTransition(j.Status, model.JointConfirmed) {
 		return nil, fmt.Errorf("%w: cannot confirm joint in status %s", model.ErrInvalidState, j.Status)
 	}
-	if err := s.joints.UpdateStatus(id, model.JointConfirmed); err != nil {
+	if err := s.joints.UpdateStatusFrom(id, j.Status, model.JointConfirmed); err != nil {
 		return nil, err
 	}
 	return s.joints.Get(id)

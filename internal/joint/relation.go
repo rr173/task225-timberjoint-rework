@@ -28,6 +28,11 @@ func CanTransition(from, to string) bool {
 	return false
 }
 
+// CanCheck reports whether a relation is still editable by a fresh review.
+func CanCheck(status string) bool {
+	return status == model.JointCandidate || status == model.JointClosed || status == model.JointBroken
+}
+
 // ParseIDList 解析 JSON 数组字符串为 ID 列表；空串返回空列表。
 func ParseIDList(raw string) ([]string, error) {
 	if strings.TrimSpace(raw) == "" {

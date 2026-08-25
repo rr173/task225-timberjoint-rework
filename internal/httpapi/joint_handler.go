@@ -53,7 +53,12 @@ func (s *Server) checkJoint(w http.ResponseWriter, r *http.Request) {
 
 // confirmJoint POST /api/joints/{id}/confirm
 func (s *Server) confirmJoint(w http.ResponseWriter, r *http.Request) {
-	j, err := s.app.Joints.Confirm(r.PathValue("id"))
+	var j any
+	err := s.app.WithLock(func() error {
+		var err error
+		j, err = s.app.Joints.Confirm(r.PathValue("id"))
+		return err
+	})
 	if err != nil {
 		writeError(w, err)
 		return

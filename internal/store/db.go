@@ -69,6 +69,20 @@ type DB struct {
 // Close 关闭数据库连接。
 func (d *DB) Close() error { return d.db.Close() }
 
+// withTx executes a persistence operation atomically on the single SQLite
+// connection used by the application.
+func (d *DB) withTx(fn func(*sql.Tx) error) error {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return err
+	}
+	if err := fn(tx); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
 // Path 返回数据库路径（调试用）。
 func (d *DB) Path() string { return d.path }
 

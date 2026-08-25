@@ -33,6 +33,40 @@ func (s *VersionStore) Create(v *model.NodeVersion) error {
 	return nil
 }
 
+// CreateNext allocates the next version number, supersedes the old frozen
+// version, and inserts the new snapshot in one transaction.
+func (s *VersionStore) CreateNext(v *model.NodeVersion) error {
+	err := s.db.withTx(func(tx *sql.Tx) error {
+		var n sql.NullInt64
+		if err := tx.QueryRow(`SELECT MAX(version_no) FROM versions WHERE batch_id = ? AND node_no = ?`, v.BatchID, v.NodeNo).Scan(&n); err != nil {
+			return fmt.Errorf("max version no: %w", err)
+		}
+		if n.Valid {
+			v.VersionNo = int(n.Int64) + 1
+		} else {
+			v.VersionNo = 1
+		}
+		if _, err := tx.Exec(`UPDATE versions SET status=? WHERE batch_id=? AND node_no=? AND status=?`,
+			model.VersionSuperseded, v.BatchID, v.NodeNo, model.VersionFrozen); err != nil {
+			return fmt.Errorf("supersede versions: %w", err)
+		}
+		var publishedAt any
+		if v.PublishedAt != nil {
+			publishedAt = ts(*v.PublishedAt)
+		}
+		if _, err := tx.Exec(`INSERT INTO versions (`+versionCols+`) VALUES (?,?,?,?,?,?,?,?,?)`,
+			v.ID, v.BatchID, v.NodeNo, v.VersionNo, v.Status, v.SnapshotJSON, v.Reason,
+			ts(v.CreatedAt), publishedAt); err != nil {
+			if isUniqueViolation(err) {
+				return model.ErrDuplicate
+			}
+			return fmt.Errorf("insert version: %w", err)
+		}
+		return nil
+	})
+	return err
+}
+
 // Get 按 ID 查询版本。
 func (s *VersionStore) Get(id string) (*model.NodeVersion, error) {
 	row := s.db.db.QueryRow(`SELECT `+versionCols+` FROM versions WHERE id = ?`, id)
@@ -73,6 +107,24 @@ func (s *VersionStore) ListByBatch(batchID string) ([]model.NodeVersion, error) 
 		out = append(out, *v)
 	}
 	return out, rows.Err()
+}
+
+// AllNodesFrozen reports whether every node in a batch has at least one
+// currently frozen version ready for archival.
+func (s *VersionStore) AllNodesFrozen(batchID string) (bool, error) {
+	var total, missing int
+	if err := s.db.db.QueryRow(`SELECT COUNT(*) FROM joints WHERE batch_id = ?`, batchID).Scan(&total); err != nil {
+		return false, fmt.Errorf("count batch nodes: %w", err)
+	}
+	if total == 0 {
+		return false, nil
+	}
+	if err := s.db.db.QueryRow(`SELECT COUNT(*) FROM joints j WHERE j.batch_id = ? AND NOT EXISTS (
+		SELECT 1 FROM versions v WHERE v.batch_id = j.batch_id AND v.node_no = j.node_no AND v.status = ?
+	)`, batchID, model.VersionFrozen).Scan(&missing); err != nil {
+		return false, fmt.Errorf("count nodes without frozen versions: %w", err)
+	}
+	return missing == 0, nil
 }
 
 // MaxVersionNo 返回某节点当前最大版本号（无版本返回 0）。

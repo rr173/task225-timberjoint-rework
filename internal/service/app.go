@@ -21,7 +21,7 @@ type App struct {
 
 	stats *store.StatsStore
 
-	mu sync.Mutex // 批次状态流转与版本发布串行
+	mu sync.Mutex // 生命周期状态流转与版本发布串行
 }
 
 // New 组装应用服务。
@@ -30,7 +30,7 @@ func New(db *store.DB) (*App, error) {
 		db:    db,
 		stats: store.NewStatsStore(db),
 	}
-	app.Batches = NewBatchService(store.NewBatchStore(db))
+	app.Batches = NewBatchService(store.NewBatchStore(db), store.NewJointStore(db), store.NewVersionStore(db))
 	app.Points = NewPointService(store.NewPointStore(db), store.NewBatchStore(db))
 	app.Members = NewMemberService(store.NewMemberStore(db), store.NewBatchStore(db))
 	app.Joints = NewJointService(
@@ -65,4 +65,12 @@ func (a *App) Stats() (*model.StatSummary, error) { return a.stats.Global() }
 func (a *App) Lock() func() {
 	a.mu.Lock()
 	return a.mu.Unlock
+}
+
+// WithLock serializes a lifecycle operation across all HTTP callers sharing
+// this application instance.
+func (a *App) WithLock(fn func() error) error {
+	unlock := a.Lock()
+	defer unlock()
+	return fn()
 }

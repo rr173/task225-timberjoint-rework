@@ -54,6 +54,22 @@ func (s *JointStore) ListByBatch(batchID string) ([]model.JointRelation, error) 
 	return out, rows.Err()
 }
 
+// AllConfirmed reports whether a batch has at least one joint and every joint
+// has reached the confirmed state required for batch publication.
+func (s *JointStore) AllConfirmed(batchID string) (bool, error) {
+	var total, unresolved int
+	if err := s.db.db.QueryRow(`SELECT COUNT(*) FROM joints WHERE batch_id = ?`, batchID).Scan(&total); err != nil {
+		return false, fmt.Errorf("count batch joints: %w", err)
+	}
+	if total == 0 {
+		return false, nil
+	}
+	if err := s.db.db.QueryRow(`SELECT COUNT(*) FROM joints WHERE batch_id = ? AND status <> ?`, batchID, model.JointConfirmed).Scan(&unresolved); err != nil {
+		return false, fmt.Errorf("count unresolved joints: %w", err)
+	}
+	return unresolved == 0, nil
+}
+
 // Update 更新节点关系（几何指标与报告）。
 func (s *JointStore) Update(j *model.JointRelation) error {
 	_, err := s.db.db.Exec(`UPDATE joints SET node_no=?, point_ids=?, member_ids=?,
@@ -66,12 +82,47 @@ func (s *JointStore) Update(j *model.JointRelation) error {
 	return nil
 }
 
+// UpdateCheck persists a review result only if the relation has not reached a
+// terminal confirmation/rejection state since the review began.
+func (s *JointStore) UpdateCheck(j *model.JointRelation, previousStatus string) error {
+	res, err := s.db.db.Exec(`UPDATE joints SET status=?, closure_residual=?, direction_spread=?, check_report=?, updated_at=? WHERE id=? AND status=?`,
+		j.Status, j.ClosureResidual, j.DirectionSpread, j.CheckReport, ts(j.UpdatedAt), j.ID, previousStatus)
+	if err != nil {
+		return fmt.Errorf("update joint check: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("check joint review update: %w", err)
+	}
+	if n == 0 {
+		return model.ErrConflict
+	}
+	return nil
+}
+
 // UpdateStatus 更新节点关系状态。
 func (s *JointStore) UpdateStatus(id, status string) error {
 	_, err := s.db.db.Exec(`UPDATE joints SET status=?, updated_at=? WHERE id=?`,
 		status, ts(nowUTC()), id)
 	if err != nil {
 		return fmt.Errorf("update joint status: %w", err)
+	}
+	return nil
+}
+
+// UpdateStatusFrom performs a compare-and-set state transition.
+func (s *JointStore) UpdateStatusFrom(id, from, to string) error {
+	res, err := s.db.db.Exec(`UPDATE joints SET status=?, updated_at=? WHERE id=? AND status=?`,
+		to, ts(nowUTC()), id, from)
+	if err != nil {
+		return fmt.Errorf("update joint status: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("check joint status update: %w", err)
+	}
+	if n == 0 {
+		return model.ErrConflict
 	}
 	return nil
 }

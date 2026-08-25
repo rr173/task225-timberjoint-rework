@@ -11,12 +11,14 @@ import (
 
 // BatchService 编排测绘批次的生命周期。
 type BatchService struct {
-	batches *store.BatchStore
+	batches  *store.BatchStore
+	joints   *store.JointStore
+	versions *store.VersionStore
 }
 
 // NewBatchService 构造批次服务。
-func NewBatchService(batches *store.BatchStore) *BatchService {
-	return &BatchService{batches: batches}
+func NewBatchService(batches *store.BatchStore, joints *store.JointStore, versions *store.VersionStore) *BatchService {
+	return &BatchService{batches: batches, joints: joints, versions: versions}
 }
 
 // BatchCreateInput 是创建批次的入参。
@@ -93,6 +95,15 @@ func (s *BatchService) Advance(id string) (*model.SurveyBatch, error) {
 	if next == "" {
 		return nil, fmt.Errorf("%w: batch already at terminal state %s", model.ErrInvalidState, b.Status)
 	}
+	if next == model.BatchPublished {
+		ready, err := s.joints.AllConfirmed(id)
+		if err != nil {
+			return nil, err
+		}
+		if !ready {
+			return nil, fmt.Errorf("%w: all batch joints must be confirmed before publication", model.ErrInvalidState)
+		}
+	}
 	if err := s.batches.UpdateStatus(id, next); err != nil {
 		return nil, err
 	}
@@ -110,6 +121,13 @@ func (s *BatchService) Archive(id string) (*model.SurveyBatch, error) {
 	}
 	if b.Status != model.BatchPublished {
 		return nil, fmt.Errorf("%w: only published batch can be archived, got %s", model.ErrInvalidState, b.Status)
+	}
+	ready, err := s.versions.AllNodesFrozen(id)
+	if err != nil {
+		return nil, err
+	}
+	if !ready {
+		return nil, fmt.Errorf("%w: all batch nodes need frozen versions before archival", model.ErrInvalidState)
 	}
 	if err := s.batches.UpdateStatus(id, model.BatchArchived); err != nil {
 		return nil, err

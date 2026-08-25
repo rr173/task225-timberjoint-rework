@@ -37,6 +37,12 @@ func (s *MemberStore) Get(id string) (*model.Member, error) {
 	return scanMember(row)
 }
 
+// GetInBatch returns a member only when it belongs to the requested batch.
+func (s *MemberStore) GetInBatch(id, batchID string) (*model.Member, error) {
+	row := s.db.db.QueryRow(`SELECT `+memberCols+` FROM members WHERE id = ? AND batch_id = ?`, id, batchID)
+	return scanMember(row)
+}
+
 // ListByBatch 列出某批次的全部构件（按编号排序）。
 func (s *MemberStore) ListByBatch(batchID string) ([]model.Member, error) {
 	rows, err := s.db.db.Query(`SELECT `+memberCols+` FROM members WHERE batch_id = ? ORDER BY member_no`, batchID)

@@ -37,6 +37,12 @@ func (s *PointStore) Get(id string) (*model.SurveyPoint, error) {
 	return scanPoint(row)
 }
 
+// GetInBatch returns a point only when it belongs to the requested batch.
+func (s *PointStore) GetInBatch(id, batchID string) (*model.SurveyPoint, error) {
+	row := s.db.db.QueryRow(`SELECT `+pointCols+` FROM points WHERE id = ? AND batch_id = ?`, id, batchID)
+	return scanPoint(row)
+}
+
 // ListByBatch 列出某批次的全部测点（按编号排序）。
 func (s *PointStore) ListByBatch(batchID string) ([]model.SurveyPoint, error) {
 	rows, err := s.db.db.Query(`SELECT `+pointCols+` FROM points WHERE batch_id = ? ORDER BY point_no`, batchID)
